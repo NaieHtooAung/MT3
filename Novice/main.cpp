@@ -17,12 +17,12 @@ typedef struct Matrix4x4 {
 
 }Matrix4x4;
 
-Matrix4x4 OrthographicMatrix(float left, float right, float top, float bottom, float nearZ, float farZ) {
+Matrix4x4 OrthographicMatrix(float left, float top, float right, float bottom, float nearClip, float farClip) {
 	Matrix4x4 result = {};
 
 	float width = right - left;
 	float height = top - bottom;
-	float depth = farZ - nearZ;
+	float depth = farClip - nearClip;
 
 	result.m[0][0] = 2.0f / width;
 	result.m[1][1] = 2.0f / height;
@@ -30,21 +30,21 @@ Matrix4x4 OrthographicMatrix(float left, float right, float top, float bottom, f
 
 	result.m[3][0] = -(right + left) / width;
 	result.m[3][1] = -(top + bottom) / height;
-	result.m[3][2] = -nearZ / depth;
+	result.m[3][2] = -nearClip / depth;
 
 	result.m[3][3] = 1.0f;
 
 	return result;
 }
 
-Matrix4x4 PerspectiveMatrix(float fovY, float aspect, float nearZ, float farZ) {
+Matrix4x4 PerspectiveMatrix(float fovY, float aspect, float nearClip, float farClip) {
 	Matrix4x4 result = {};
 	float f = 1.0f / tanf(fovY / 2.0f);
 	result.m[0][0] = f / aspect;
 	result.m[1][1] = f;
-	result.m[2][2] = farZ / (farZ - nearZ);
+	result.m[2][2] = farClip / (farClip - nearClip);
 	result.m[2][3] = 1.0f;
-	result.m[3][2] = -(farZ * nearZ) / (farZ - nearZ);
+	result.m[3][2] = -(farClip * nearClip) / (farClip - nearClip);
 	return result;
 }
 Matrix4x4 MakeViewPortMatrix(float x, float y, float width, float height, float minDepth, float maxDepth) {
