@@ -1,5 +1,5 @@
 #include <Novice.h>
-#include <math.h>
+#include <cmath>
 const char kWindowTitle[] = "GC2A_04_ネイ_トウーアウン";
 typedef struct Vector3 {
 
@@ -7,13 +7,13 @@ typedef struct Vector3 {
 	float y;
 	float z;
 
-}Vector3;
+} Vector3;
 
 typedef struct Matrix4x4 {
 	float m[4][4];
-}Matrix4x4;
+} Matrix4x4;
 
-Matrix4x4 Multiply(Matrix4x4 m1 ,Matrix4x4 m2) {
+Matrix4x4 Multiply(Matrix4x4 m1, Matrix4x4 m2) {
 	Matrix4x4 result = {};
 	for (int i = 0; i < 4; i++) {
 		for (int j = 0; j < 4; j++) {
@@ -24,35 +24,33 @@ Matrix4x4 Multiply(Matrix4x4 m1 ,Matrix4x4 m2) {
 	}
 	return result;
 }
-Matrix4x4 MakeRotateXMatrix(float radius)
-{
+Matrix4x4 MakeRotateXMatrix(float radius) {
 	Matrix4x4 result = {};
 	result.m[0][0] = 1.0f;
-	result.m[1][1] = cosf(radius);
-	result.m[1][2] = sinf(radius);
-	result.m[2][1] = -sinf(radius);
-	result.m[2][2] = cosf(radius);
+	result.m[1][1] = std::cos(radius);
+	result.m[1][2] = std::sin(radius);
+	result.m[2][1] = -std::sin(radius);
+	result.m[2][2] = std::cos(radius);
 	result.m[3][3] = 1.0f;
 	return result;
 }
-Matrix4x4 MakeRotateYMatrix(float radius)
-{
+Matrix4x4 MakeRotateYMatrix(float radius) {
 	Matrix4x4 result = {};
-	result.m[0][0] = cosf(radius);
-	result.m[0][2] = -sinf(radius);
+	result.m[0][0] = std::cos(radius);
+	result.m[0][2] = -std::sin(radius);
 	result.m[1][1] = 1.0f;
-	result.m[2][0] = sinf(radius);
-	result.m[2][2] = cosf(radius);
+	result.m[2][0] = std::sin(radius);
+	result.m[2][2] = std::cos(radius);
 	result.m[3][3] = 1.0f;
 	return result;
 }
 Matrix4x4 MakeRotateZMatrix(float radius) {
 
 	Matrix4x4 result = {};
-	result.m[0][0] = cosf(radius);
-	result.m[0][1] = sinf(radius);
-	result.m[1][0] = -sinf(radius);
-	result.m[1][1] = cosf(radius);
+	result.m[0][0] = std::cos(radius);
+	result.m[0][1] = std::sin(radius);
+	result.m[1][0] = -std::sin(radius);
+	result.m[1][1] = std::cos(radius);
 	result.m[2][2] = 1.0f;
 	result.m[3][3] = 1.0f;
 	return result;
@@ -68,7 +66,7 @@ void MatrixScreenPrintf(int x, int y, const Matrix4x4& matrix, const char* label
 		}
 	}
 }
-    // Windowsアプリでのエントリーポイント(main関数)
+// Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// ライブラリの初期化
@@ -78,7 +76,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	char keys[256] = {0};
 	char preKeys[256] = {0};
 
-	Vector3 rotate = {0.4f,1.43f,-0.8f};
+	Vector3 rotate = {0.4f, 1.43f, -0.8f};
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
