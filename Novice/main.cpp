@@ -13,11 +13,6 @@ typedef struct Vector3 {
 	float z;
 } Vector3;
 
-struct AABB {
-	Vector3 min;
-	Vector3 max;
-};
-
 struct OBB {
 	Vector3 center;
 	Vector3 orientation[3];
@@ -44,33 +39,6 @@ Vector3 Normalize(const Vector3& v) {
 	if (len > 0.0f)
 		return Scale(v, 1.0f / len);
 	return v;
-}
-
-bool IsCollision(const AABB& a, const Segment& seg) {
-	float tMin = 0.0f;
-	float tMax = 1.0f;
-
-	float origins[3] = {seg.origin.x, seg.origin.y, seg.origin.z};
-	float diffs[3] = {seg.diff.x, seg.diff.y, seg.diff.z};
-	float mins[3] = {a.min.x, a.min.y, a.min.z};
-	float maxs[3] = {a.max.x, a.max.y, a.max.z};
-
-	for (int i = 0; i < 3; i++) {
-		if (std::abs(diffs[i]) < 1e-6f) {
-			if (origins[i] < mins[i] || origins[i] > maxs[i])
-				return false;
-		} else {
-			float t1 = (mins[i] - origins[i]) / diffs[i];
-			float t2 = (maxs[i] - origins[i]) / diffs[i];
-			if (t1 > t2)
-				std::swap(t1, t2);
-			tMin = std::max(tMin, t1);
-			tMax = std::min(tMax, t2);
-			if (tMin > tMax)
-				return false;
-		}
-	}
-	return true;
 }
 
 bool IsCollision(const OBB& obb, const Segment& seg) {
@@ -227,38 +195,6 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	}
 }
 
-void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	Vector3 vertices[8] = {
-	    {aabb.min.x, aabb.min.y, aabb.min.z},
-        {aabb.max.x, aabb.min.y, aabb.min.z},
-        {aabb.max.x, aabb.max.y, aabb.min.z},
-        {aabb.min.x, aabb.max.y, aabb.min.z},
-	    {aabb.min.x, aabb.min.y, aabb.max.z},
-        {aabb.max.x, aabb.min.y, aabb.max.z},
-        {aabb.max.x, aabb.max.y, aabb.max.z},
-        {aabb.min.x, aabb.max.y, aabb.max.z},
-	};
-	int indices[12][2] = {
-	    {0, 1},
-        {1, 2},
-        {2, 3},
-        {3, 0},
-        {4, 5},
-        {5, 6},
-        {6, 7},
-        {7, 4},
-        {0, 4},
-        {1, 5},
-        {2, 6},
-        {3, 7}
-    };
-	for (int i = 0; i < 12; i++) {
-		Vector3 start = Transform(Transform(vertices[indices[i][0]], viewProjectionMatrix), viewportMatrix);
-		Vector3 end = Transform(Transform(vertices[indices[i][1]], viewProjectionMatrix), viewportMatrix);
-		Novice::DrawLine(int(start.x), int(start.y), int(end.x), int(end.y), color);
-	}
-}
-
 void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
 	Vector3 ax = Scale(obb.orientation[0], obb.size.x);
 	Vector3 ay = Scale(obb.orientation[1], obb.size.y);
@@ -313,9 +249,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraRotate = {0.52f, 0.0f, 0.0f};
 
 	OBB obb = {
-	    .center = {0.0f,0.0f,0.0f},
+	    .center = {0.0f,               0.0f,               0.0f              },
 	    .orientation = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-	    .size = {0.5f, 0.5f, 0.5f},
+	    .size = {0.5f,               0.5f,               0.5f              },
 	};
 	Vector3 obbRotate = {0.0f, 0.0f, 0.0f};
 
