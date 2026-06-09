@@ -19,9 +19,9 @@ struct OBB {
 	Vector3 size;
 };
 
-struct Segment {
-	Vector3 origin;
-	Vector3 diff;
+struct Sphere {
+	Vector3 center;
+	float radius;
 };
 
 typedef struct Matrix4x4 {
@@ -41,39 +41,33 @@ Vector3 Normalize(const Vector3& v) {
 	return v;
 }
 
-bool IsCollision(const OBB& obb, const Segment& seg) {
-	Vector3 d = Subtract(seg.origin, obb.center);
+// OBB vs Sphere:
+// Transform sphere center into OBB local space using orientation axes,
+// then find the closest point on the local AABB [-size, +size],
+// and check if distance to that point <= radius.
+bool IsCollision(const OBB& obb, const Sphere& sphere) {
+	// Vector from OBB center to sphere center
+	Vector3 d = Subtract(sphere.center, obb.center);
 
-	float localOrigin[3], localDiff[3], sizes[3];
-	localOrigin[0] = Dot(d, obb.orientation[0]);
-	localOrigin[1] = Dot(d, obb.orientation[1]);
-	localOrigin[2] = Dot(d, obb.orientation[2]);
-	localDiff[0] = Dot(seg.diff, obb.orientation[0]);
-	localDiff[1] = Dot(seg.diff, obb.orientation[1]);
-	localDiff[2] = Dot(seg.diff, obb.orientation[2]);
-	sizes[0] = obb.size.x;
-	sizes[1] = obb.size.y;
-	sizes[2] = obb.size.z;
+	// Project d onto each OBB axis to get local coordinates
+	Vector3 localCenter = {Dot(d, obb.orientation[0]), Dot(d, obb.orientation[1]), Dot(d, obb.orientation[2])};
 
-	float tMin = 0.0f;
-	float tMax = 1.0f;
+	// Clamp local center to OBB extents to find closest point
+	float sizes[3] = {obb.size.x, obb.size.y, obb.size.z};
+	float local[3] = {localCenter.x, localCenter.y, localCenter.z};
 
+	Vector3 closestPoint;
+	float cp[3];
 	for (int i = 0; i < 3; i++) {
-		if (std::abs(localDiff[i]) < 1e-6f) {
-			if (localOrigin[i] < -sizes[i] || localOrigin[i] > sizes[i])
-				return false;
-		} else {
-			float t1 = (-sizes[i] - localOrigin[i]) / localDiff[i];
-			float t2 = (sizes[i] - localOrigin[i]) / localDiff[i];
-			if (t1 > t2)
-				std::swap(t1, t2);
-			tMin = std::max(tMin, t1);
-			tMax = std::min(tMax, t2);
-			if (tMin > tMax)
-				return false;
-		}
+		cp[i] = std::max(-sizes[i], std::min(local[i], sizes[i]));
 	}
-	return true;
+	closestPoint = {cp[0], cp[1], cp[2]};
+
+	// Distance from closest point to sphere center in local space
+	Vector3 diff = Subtract(localCenter, closestPoint);
+	float distSq = Dot(diff, diff);
+
+	return distSq <= sphere.radius * sphere.radius;
 }
 
 Matrix4x4 Multiply(Matrix4x4 m1, Matrix4x4 m2) {
@@ -233,10 +227,33 @@ void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix
 	}
 }
 
-void DrawSegment(const Segment& seg, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
-	Vector3 screenStart = Transform(Transform(seg.origin, viewProjectionMatrix), viewportMatrix);
-	Vector3 screenEnd = Transform(Transform(Add(seg.origin, seg.diff), viewProjectionMatrix), viewportMatrix);
-	Novice::DrawLine(int(screenStart.x), int(screenStart.y), int(screenEnd.x), int(screenEnd.y), WHITE);
+void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	const int kSubdivision = 16;
+	const float kLonEvery = 2.0f * kPi / float(kSubdivision);
+	const float kLatEvery = kPi / float(kSubdivision);
+
+	for (int latIndex = 0; latIndex < kSubdivision; latIndex++) {
+		float lat = -kPi / 2.0f + kLatEvery * float(latIndex);
+		for (int lonIndex = 0; lonIndex < kSubdivision; lonIndex++) {
+			float lon = kLonEvery * float(lonIndex);
+
+			Vector3 a = {
+			    sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon), sphere.center.y + sphere.radius * std::sin(lat), sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon)};
+			Vector3 b = {
+			    sphere.center.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon), sphere.center.y + sphere.radius * std::sin(lat + kLatEvery),
+			    sphere.center.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)};
+			Vector3 c = {
+			    sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery), sphere.center.y + sphere.radius * std::sin(lat),
+			    sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)};
+
+			Vector3 sa = Transform(Transform(a, viewProjectionMatrix), viewportMatrix);
+			Vector3 sb = Transform(Transform(b, viewProjectionMatrix), viewportMatrix);
+			Vector3 sc = Transform(Transform(c, viewProjectionMatrix), viewportMatrix);
+
+			Novice::DrawLine(int(sa.x), int(sa.y), int(sb.x), int(sb.y), color);
+			Novice::DrawLine(int(sa.x), int(sa.y), int(sc.x), int(sc.y), color);
+		}
+	}
 }
 
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
@@ -249,16 +266,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraRotate = {0.52f, 0.0f, 0.0f};
 
 	OBB obb = {
-	    .center = {0.0f, 0.0f, 0.0f},
+	    .center = {0.0f,               0.0f,               0.0f              },
 	    .orientation = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-	    .size = {0.5f, 0.5f, 0.5f},
+	    .size = {0.5f,               0.5f,               0.5f              },
 	};
 	Vector3 obbRotate = {0.0f, 0.0f, 0.0f};
 
-	Segment segment = {
-	    {-0.7f, 0.3f,  0.0f},
-        {2.0f,  -0.5f, 0.0f}
-    };
+	Sphere sphere = {
+	    .center = {0.8f, 0.0f, 0.0f},
+	    .radius = 0.5f,
+	};
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -274,7 +291,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		obb.orientation[1] = {rotXYZ.m[1][0], rotXYZ.m[1][1], rotXYZ.m[1][2]};
 		obb.orientation[2] = {rotXYZ.m[2][0], rotXYZ.m[2][1], rotXYZ.m[2][2]};
 
-		bool collision = IsCollision(obb, segment);
+		bool collision = IsCollision(obb, sphere);
 
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
@@ -282,8 +299,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::DragFloat3("OBB Center", &obb.center.x, 0.01f);
 		ImGui::DragFloat3("OBB Size", &obb.size.x, 0.01f);
 		ImGui::DragFloat3("OBB Rotate", &obbRotate.x, 0.01f);
-		ImGui::DragFloat3("Segment origin", &segment.origin.x, 0.01f);
-		ImGui::DragFloat3("Segment diff", &segment.diff.x, 0.01f);
+		ImGui::DragFloat3("Sphere Center", &sphere.center.x, 0.01f);
+		ImGui::DragFloat("Sphere Radius", &sphere.radius, 0.01f);
 		ImGui::End();
 
 		Matrix4x4 cameraRotateX = MakeRotateXMatrix(cameraRotate.x);
@@ -317,7 +334,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 		DrawOBB(obb, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
-		DrawSegment(segment, viewProjectionMatrix, viewportMatrix);
+		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
 
 		///
 		/// ↑描画処理ここまで
