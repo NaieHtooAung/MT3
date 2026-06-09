@@ -18,6 +18,12 @@ struct AABB {
 	Vector3 max;
 };
 
+struct OBB {
+	Vector3 center;
+	Vector3 orientation[3];
+	Vector3 size;
+};
+
 struct Segment {
 	Vector3 origin;
 	Vector3 diff;
@@ -41,10 +47,9 @@ Vector3 Normalize(const Vector3& v) {
 }
 
 bool IsCollision(const AABB& a, const Segment& seg) {
-	float tMin = 0.0f; // start of segment
-	float tMax = 1.0f; // end of segment
+	float tMin = 0.0f;
+	float tMax = 1.0f;
 
-	// Check each axis (X, Y, Z)
 	float origins[3] = {seg.origin.x, seg.origin.y, seg.origin.z};
 	float diffs[3] = {seg.diff.x, seg.diff.y, seg.diff.z};
 	float mins[3] = {a.min.x, a.min.y, a.min.z};
@@ -52,7 +57,6 @@ bool IsCollision(const AABB& a, const Segment& seg) {
 
 	for (int i = 0; i < 3; i++) {
 		if (std::abs(diffs[i]) < 1e-6f) {
-			// Segment is parallel to this slab — check if origin is inside
 			if (origins[i] < mins[i] || origins[i] > maxs[i])
 				return false;
 		} else {
@@ -60,15 +64,47 @@ bool IsCollision(const AABB& a, const Segment& seg) {
 			float t2 = (maxs[i] - origins[i]) / diffs[i];
 			if (t1 > t2)
 				std::swap(t1, t2);
-
 			tMin = std::max(tMin, t1);
 			tMax = std::min(tMax, t2);
-
 			if (tMin > tMax)
 				return false;
 		}
 	}
+	return true;
+}
 
+bool IsCollision(const OBB& obb, const Segment& seg) {
+	Vector3 d = Subtract(seg.origin, obb.center);
+
+	float localOrigin[3], localDiff[3], sizes[3];
+	localOrigin[0] = Dot(d, obb.orientation[0]);
+	localOrigin[1] = Dot(d, obb.orientation[1]);
+	localOrigin[2] = Dot(d, obb.orientation[2]);
+	localDiff[0] = Dot(seg.diff, obb.orientation[0]);
+	localDiff[1] = Dot(seg.diff, obb.orientation[1]);
+	localDiff[2] = Dot(seg.diff, obb.orientation[2]);
+	sizes[0] = obb.size.x;
+	sizes[1] = obb.size.y;
+	sizes[2] = obb.size.z;
+
+	float tMin = 0.0f;
+	float tMax = 1.0f;
+
+	for (int i = 0; i < 3; i++) {
+		if (std::abs(localDiff[i]) < 1e-6f) {
+			if (localOrigin[i] < -sizes[i] || localOrigin[i] > sizes[i])
+				return false;
+		} else {
+			float t1 = (-sizes[i] - localOrigin[i]) / localDiff[i];
+			float t2 = (sizes[i] - localOrigin[i]) / localDiff[i];
+			if (t1 > t2)
+				std::swap(t1, t2);
+			tMin = std::max(tMin, t1);
+			tMax = std::min(tMax, t2);
+			if (tMin > tMax)
+				return false;
+		}
+	}
 	return true;
 }
 
@@ -102,6 +138,19 @@ Matrix4x4 MakeRotateYMatrix(float angle) {
 	result.m[3][3] = 1.0f;
 	return result;
 }
+
+Matrix4x4 MakeRotateZMatrix(float angle) {
+	Matrix4x4 result = {};
+	result.m[0][0] = std::cos(angle);
+	result.m[0][1] = std::sin(angle);
+	result.m[1][0] = -std::sin(angle);
+	result.m[1][1] = std::cos(angle);
+	result.m[2][2] = 1.0f;
+	result.m[3][3] = 1.0f;
+	return result;
+}
+
+Matrix4x4 MakeRotateXYZMatrix(float x, float y, float z) { return Multiply(Multiply(MakeRotateXMatrix(x), MakeRotateYMatrix(y)), MakeRotateZMatrix(z)); }
 
 Matrix4x4 MakeTranslateMatrix(float x, float y, float z) {
 	Matrix4x4 result = {};
@@ -210,6 +259,44 @@ void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Mat
 	}
 }
 
+void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 ax = Scale(obb.orientation[0], obb.size.x);
+	Vector3 ay = Scale(obb.orientation[1], obb.size.y);
+	Vector3 az = Scale(obb.orientation[2], obb.size.z);
+
+	Vector3 corners[8] = {
+	    Add(Add(Add(obb.center, ax), ay), az),
+	    Add(Add(Add(obb.center, ax), ay), Scale(az, -1)),
+	    Add(Add(Add(obb.center, ax), Scale(ay, -1)), az),
+	    Add(Add(Add(obb.center, ax), Scale(ay, -1)), Scale(az, -1)),
+	    Add(Add(Add(obb.center, Scale(ax, -1)), ay), az),
+	    Add(Add(Add(obb.center, Scale(ax, -1)), ay), Scale(az, -1)),
+	    Add(Add(Add(obb.center, Scale(ax, -1)), Scale(ay, -1)), az),
+	    Add(Add(Add(obb.center, Scale(ax, -1)), Scale(ay, -1)), Scale(az, -1)),
+	};
+
+	int indices[12][2] = {
+	    {0, 1},
+        {1, 3},
+        {3, 2},
+        {2, 0},
+        {4, 5},
+        {5, 7},
+        {7, 6},
+        {6, 4},
+        {0, 4},
+        {1, 5},
+        {2, 6},
+        {3, 7}
+    };
+
+	for (int i = 0; i < 12; i++) {
+		Vector3 start = Transform(Transform(corners[indices[i][0]], viewProjectionMatrix), viewportMatrix);
+		Vector3 end = Transform(Transform(corners[indices[i][1]], viewProjectionMatrix), viewportMatrix);
+		Novice::DrawLine(int(start.x), int(start.y), int(end.x), int(end.y), color);
+	}
+}
+
 void DrawSegment(const Segment& seg, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
 	Vector3 screenStart = Transform(Transform(seg.origin, viewProjectionMatrix), viewportMatrix);
 	Vector3 screenEnd = Transform(Transform(Add(seg.origin, seg.diff), viewProjectionMatrix), viewportMatrix);
@@ -225,13 +312,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraTranslate = {0.0f, 0.0f, -9.5f};
 	Vector3 cameraRotate = {0.52f, 0.0f, 0.0f};
 
-	AABB aabb1 = {
-	    .min = {-0.5f, -0.5f, -0.5f},
-	    .max = {0.5f,  0.5f,  0.5f },
+	OBB obb = {
+	    .center = {0.0f,               0.0f,               0.0f              },
+	    .orientation = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+	    .size = {0.5f,               0.5f,               0.5f              },
 	};
+	Vector3 obbRotate = {0.0f, 0.0f, 0.0f};
+
 	Segment segment = {
-	    {-0.7f, 0.3f, 0.0f},
-        {2.0f,-0.5f,0.0f}
+	    {-0.7f, 0.3f,  0.0f},
+        {2.0f,  -0.5f, 0.0f}
     };
 
 	while (Novice::ProcessMessage() == 0) {
@@ -243,13 +333,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓更新処理ここから
 		///
 
-		bool collision = IsCollision(aabb1, segment);
+		Matrix4x4 rotXYZ = MakeRotateXYZMatrix(obbRotate.x, obbRotate.y, obbRotate.z);
+		obb.orientation[0] = {rotXYZ.m[0][0], rotXYZ.m[0][1], rotXYZ.m[0][2]};
+		obb.orientation[1] = {rotXYZ.m[1][0], rotXYZ.m[1][1], rotXYZ.m[1][2]};
+		obb.orientation[2] = {rotXYZ.m[2][0], rotXYZ.m[2][1], rotXYZ.m[2][2]};
+
+		bool collision = IsCollision(obb, segment);
 
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("AABB min", &aabb1.min.x, 0.01f);
-		ImGui::DragFloat3("AABB max", &aabb1.max.x, 0.01f);
+		ImGui::DragFloat3("OBB Center", &obb.center.x, 0.01f);
+		ImGui::DragFloat3("OBB Size", &obb.size.x, 0.01f);
+		ImGui::DragFloat3("OBB Rotate", &obbRotate.x, 0.01f);
 		ImGui::DragFloat3("Segment origin", &segment.origin.x, 0.01f);
 		ImGui::DragFloat3("Segment diff", &segment.diff.x, 0.01f);
 		ImGui::End();
@@ -284,7 +380,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		///
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
-		DrawAABB(aabb1, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
+		DrawOBB(obb, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
 		DrawSegment(segment, viewProjectionMatrix, viewportMatrix);
 
 		///
