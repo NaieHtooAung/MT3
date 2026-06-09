@@ -249,9 +249,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraRotate = {0.52f, 0.0f, 0.0f};
 
 	OBB obb = {
-	    .center = {0.0f,               0.0f,               0.0f              },
+	    .center = {0.0f, 0.0f, 0.0f},
 	    .orientation = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-	    .size = {0.5f,               0.5f,               0.5f              },
+	    .size = {0.5f, 0.5f, 0.5f},
 	};
 	Vector3 obbRotate = {0.0f, 0.0f, 0.0f};
 
