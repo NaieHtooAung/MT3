@@ -13,27 +13,45 @@ typedef struct Vector3 {
 	float z;
 } Vector3;
 
+struct AABB {
+	Vector3 center;
+	Vector3 size;
+};
+
 struct OBB {
 	Vector3 center;
 	Vector3 orientation[3];
 	Vector3 size;
 };
 
-struct Sphere {
-	Vector3 center;
-	float radius;
+struct Segment {
+	Vector3 origin;
+	Vector3 diff;
 };
 
 typedef struct Matrix4x4 {
 	float m[4][4];
 } Matrix4x4;
 
+// Returns the component-wise sum of two vectors
 Vector3 Add(const Vector3& v1, const Vector3& v2) { return {v1.x + v2.x, v1.y + v2.y, v1.z + v2.z}; }
+
+// Returns the component-wise difference of two vectors
 Vector3 Subtract(const Vector3& v1, const Vector3& v2) { return {v1.x - v2.x, v1.y - v2.y, v1.z - v2.z}; }
+
+// Returns the dot product of two vectors
 float Dot(const Vector3& v1, const Vector3& v2) { return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z; }
+
+// Returns a vector scaled by scalar s
 Vector3 Scale(const Vector3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
+
+// Returns the length (magnitude) of a vector
 float Length(const Vector3& v) { return std::sqrt(Dot(v, v)); }
+
+// Returns the cross product of two vectors
 Vector3 Cross(const Vector3& v1, const Vector3& v2) { return {v1.y * v2.z - v1.z * v2.y, v1.z * v2.x - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x}; }
+
+// Returns a unit vector in the same direction; returns the original vector if length is zero
 Vector3 Normalize(const Vector3& v) {
 	float len = Length(v);
 	if (len > 0.0f)
@@ -41,35 +59,7 @@ Vector3 Normalize(const Vector3& v) {
 	return v;
 }
 
-// OBB vs Sphere:
-// Transform sphere center into OBB local space using orientation axes,
-// then find the closest point on the local AABB [-size, +size],
-// and check if distance to that point <= radius.
-bool IsCollision(const OBB& obb, const Sphere& sphere) {
-	// Vector from OBB center to sphere center
-	Vector3 d = Subtract(sphere.center, obb.center);
-
-	// Project d onto each OBB axis to get local coordinates
-	Vector3 localCenter = {Dot(d, obb.orientation[0]), Dot(d, obb.orientation[1]), Dot(d, obb.orientation[2])};
-
-	// Clamp local center to OBB extents to find closest point
-	float sizes[3] = {obb.size.x, obb.size.y, obb.size.z};
-	float local[3] = {localCenter.x, localCenter.y, localCenter.z};
-
-	Vector3 closestPoint;
-	float cp[3];
-	for (int i = 0; i < 3; i++) {
-		cp[i] = std::max(-sizes[i], std::min(local[i], sizes[i]));
-	}
-	closestPoint = {cp[0], cp[1], cp[2]};
-
-	// Distance from closest point to sphere center in local space
-	Vector3 diff = Subtract(localCenter, closestPoint);
-	float distSq = Dot(diff, diff);
-
-	return distSq <= sphere.radius * sphere.radius;
-}
-
+// Returns the product of two 4x4 matrices
 Matrix4x4 Multiply(Matrix4x4 m1, Matrix4x4 m2) {
 	Matrix4x4 result = {};
 	for (int i = 0; i < 4; i++)
@@ -79,6 +69,7 @@ Matrix4x4 Multiply(Matrix4x4 m1, Matrix4x4 m2) {
 	return result;
 }
 
+// Returns a rotation matrix around the X axis by the given angle (radians)
 Matrix4x4 MakeRotateXMatrix(float angle) {
 	Matrix4x4 result = {};
 	result.m[0][0] = 1.0f;
@@ -90,6 +81,7 @@ Matrix4x4 MakeRotateXMatrix(float angle) {
 	return result;
 }
 
+// Returns a rotation matrix around the Y axis by the given angle (radians)
 Matrix4x4 MakeRotateYMatrix(float angle) {
 	Matrix4x4 result = {};
 	result.m[0][0] = std::cos(angle);
@@ -101,6 +93,7 @@ Matrix4x4 MakeRotateYMatrix(float angle) {
 	return result;
 }
 
+// Returns a rotation matrix around the Z axis by the given angle (radians)
 Matrix4x4 MakeRotateZMatrix(float angle) {
 	Matrix4x4 result = {};
 	result.m[0][0] = std::cos(angle);
@@ -112,8 +105,10 @@ Matrix4x4 MakeRotateZMatrix(float angle) {
 	return result;
 }
 
+// Returns a combined rotation matrix applied in X -> Y -> Z order
 Matrix4x4 MakeRotateXYZMatrix(float x, float y, float z) { return Multiply(Multiply(MakeRotateXMatrix(x), MakeRotateYMatrix(y)), MakeRotateZMatrix(z)); }
 
+// Returns a translation matrix for the given x, y, z offsets
 Matrix4x4 MakeTranslateMatrix(float x, float y, float z) {
 	Matrix4x4 result = {};
 	result.m[0][0] = 1.0f;
@@ -126,6 +121,8 @@ Matrix4x4 MakeTranslateMatrix(float x, float y, float z) {
 	return result;
 }
 
+// Returns the inverse of a rotation-translation matrix by transposing the 3x3 rotation part
+// and recomputing the translation row accordingly
 Matrix4x4 MakeInverseMatrix(const Matrix4x4& m) {
 	Matrix4x4 result = {};
 	for (int i = 0; i < 3; i++)
@@ -138,6 +135,8 @@ Matrix4x4 MakeInverseMatrix(const Matrix4x4& m) {
 	return result;
 }
 
+// Returns a viewport matrix that maps NDC coordinates to screen pixel coordinates
+// x, y: top-left corner of the viewport; width, height: dimensions; minZ, maxZ: depth range
 Matrix4x4 makeViewportMatrix(float x, float y, float width, float height, float minZ, float maxZ) {
 	Matrix4x4 result = {};
 	result.m[0][0] = width / 2.0f;
@@ -150,6 +149,7 @@ Matrix4x4 makeViewportMatrix(float x, float y, float width, float height, float 
 	return result;
 }
 
+// Transforms a 3D vertex by a 4x4 matrix and performs perspective divide
 Vector3 Transform(const Vector3& vertex, const Matrix4x4& matrix) {
 	Vector3 result{};
 	result.x = vertex.x * matrix.m[0][0] + vertex.y * matrix.m[1][0] + vertex.z * matrix.m[2][0] + matrix.m[3][0];
@@ -164,6 +164,66 @@ Vector3 Transform(const Vector3& vertex, const Matrix4x4& matrix) {
 	return result;
 }
 
+// OBB vs Segment:
+// Builds the OBB world matrix from its orientation axes and center,
+// inverts it to get the OBB local space transform,
+// transforms both segment endpoints into local space,
+// then runs a slab test against the local AABB [-size, +size].
+// Returns true if the overlapping t range intersects [0, 1] (the segment extent).
+bool IsCollision(const OBB& obb, const Segment& segment) {
+	// Build OBB world matrix from orientation axes and center
+	Matrix4x4 obbWorld = {};
+	obbWorld.m[0][0] = obb.orientation[0].x;
+	obbWorld.m[0][1] = obb.orientation[0].y;
+	obbWorld.m[0][2] = obb.orientation[0].z;
+	obbWorld.m[1][0] = obb.orientation[1].x;
+	obbWorld.m[1][1] = obb.orientation[1].y;
+	obbWorld.m[1][2] = obb.orientation[1].z;
+	obbWorld.m[2][0] = obb.orientation[2].x;
+	obbWorld.m[2][1] = obb.orientation[2].y;
+	obbWorld.m[2][2] = obb.orientation[2].z;
+	obbWorld.m[3][0] = obb.center.x;
+	obbWorld.m[3][1] = obb.center.y;
+	obbWorld.m[3][2] = obb.center.z;
+	obbWorld.m[3][3] = 1.0f;
+
+	// Invert to get transform from world space into OBB local space
+	Matrix4x4 obbInverse = MakeInverseMatrix(obbWorld);
+
+	// Transform segment endpoints into OBB local space
+	Vector3 localOrigin = Transform(segment.origin, obbInverse);
+	Vector3 localEnd = Transform(Add(segment.origin, segment.diff), obbInverse);
+	Vector3 localDiff = Subtract(localEnd, localOrigin);
+
+	// Slab test: find t range where the segment overlaps each axis-aligned slab
+	float tMin = -1e10f, tMax = 1e10f;
+	float dirs[3] = {localDiff.x, localDiff.y, localDiff.z};
+	float origs[3] = {localOrigin.x, localOrigin.y, localOrigin.z};
+	float sizes[3] = {obb.size.x, obb.size.y, obb.size.z};
+
+	for (int i = 0; i < 3; i++) {
+		if (std::abs(dirs[i]) < 1e-8f) {
+			// Segment is parallel to this slab; origin must lie within it
+			if (origs[i] < -sizes[i] || origs[i] > sizes[i])
+				return false;
+		} else {
+			// Compute intersection t values with the two slab planes
+			float t1 = (-sizes[i] - origs[i]) / dirs[i];
+			float t2 = (sizes[i] - origs[i]) / dirs[i];
+			if (t1 > t2)
+				std::swap(t1, t2);
+			tMin = std::max(tMin, t1);
+			tMax = std::min(tMax, t2);
+			if (tMin > tMax)
+				return false;
+		}
+	}
+	// Segment spans t in [0, 1]; check if the slab overlap intersects that range
+	return tMax >= 0.0f && tMin <= 1.0f;
+}
+
+// Draws a world-space grid on the XZ plane using subdivided lines;
+// the center lines along each axis are drawn in black, others in gray
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
 	const float kGridHalfWidth = 2.0f;
 	const uint32_t kSubdivision = 10;
@@ -189,6 +249,8 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	}
 }
 
+// Draws the 12 edges of an OBB by computing its 8 corners from the center,
+// orientation axes, and half-size extents, then projecting each edge to screen space
 void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
 	Vector3 ax = Scale(obb.orientation[0], obb.size.x);
 	Vector3 ay = Scale(obb.orientation[1], obb.size.y);
@@ -227,33 +289,11 @@ void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix
 	}
 }
 
-void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	const int kSubdivision = 16;
-	const float kLonEvery = 2.0f * kPi / float(kSubdivision);
-	const float kLatEvery = kPi / float(kSubdivision);
-
-	for (int latIndex = 0; latIndex < kSubdivision; latIndex++) {
-		float lat = -kPi / 2.0f + kLatEvery * float(latIndex);
-		for (int lonIndex = 0; lonIndex < kSubdivision; lonIndex++) {
-			float lon = kLonEvery * float(lonIndex);
-
-			Vector3 a = {
-			    sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon), sphere.center.y + sphere.radius * std::sin(lat), sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon)};
-			Vector3 b = {
-			    sphere.center.x + sphere.radius * std::cos(lat + kLatEvery) * std::cos(lon), sphere.center.y + sphere.radius * std::sin(lat + kLatEvery),
-			    sphere.center.z + sphere.radius * std::cos(lat + kLatEvery) * std::sin(lon)};
-			Vector3 c = {
-			    sphere.center.x + sphere.radius * std::cos(lat) * std::cos(lon + kLonEvery), sphere.center.y + sphere.radius * std::sin(lat),
-			    sphere.center.z + sphere.radius * std::cos(lat) * std::sin(lon + kLonEvery)};
-
-			Vector3 sa = Transform(Transform(a, viewProjectionMatrix), viewportMatrix);
-			Vector3 sb = Transform(Transform(b, viewProjectionMatrix), viewportMatrix);
-			Vector3 sc = Transform(Transform(c, viewProjectionMatrix), viewportMatrix);
-
-			Novice::DrawLine(int(sa.x), int(sa.y), int(sb.x), int(sb.y), color);
-			Novice::DrawLine(int(sa.x), int(sa.y), int(sc.x), int(sc.y), color);
-		}
-	}
+// Draws a segment as a single line from origin to origin+diff in screen space
+void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
+	Vector3 screenStart = Transform(Transform(segment.origin, viewProjectionMatrix), viewportMatrix);
+	Vector3 screenEnd = Transform(Transform(Add(segment.origin, segment.diff), viewProjectionMatrix), viewportMatrix);
+	Novice::DrawLine(int(screenStart.x), int(screenStart.y), int(screenEnd.x), int(screenEnd.y),WHITE);
 }
 
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
@@ -266,15 +306,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraRotate = {0.52f, 0.0f, 0.0f};
 
 	OBB obb = {
-	    .center = {0.0f,               0.0f,               0.0f              },
+	    .center = {-1.0f,              0.0f,               0.0f              },
 	    .orientation = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
 	    .size = {0.5f,               0.5f,               0.5f              },
 	};
 	Vector3 obbRotate = {0.0f, 0.0f, 0.0f};
 
-	Sphere sphere = {
-	    .center = {0.8f, 0.0f, 0.0f},
-	    .radius = 0.5f,
+	Segment segment = {
+	    .origin = {-0.8f, -0.3f, 0.0f},
+	    .diff = {0.5f,  0.5f,  0.5f},
 	};
 
 	while (Novice::ProcessMessage() == 0) {
@@ -286,23 +326,27 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓更新処理ここから
 		///
 
+		// Update OBB orientation axes from the current rotation angles
 		Matrix4x4 rotXYZ = MakeRotateXYZMatrix(obbRotate.x, obbRotate.y, obbRotate.z);
 		obb.orientation[0] = {rotXYZ.m[0][0], rotXYZ.m[0][1], rotXYZ.m[0][2]};
 		obb.orientation[1] = {rotXYZ.m[1][0], rotXYZ.m[1][1], rotXYZ.m[1][2]};
 		obb.orientation[2] = {rotXYZ.m[2][0], rotXYZ.m[2][1], rotXYZ.m[2][2]};
 
-		bool collision = IsCollision(obb, sphere);
+		// Test whether the segment intersects the OBB
+		bool collision = IsCollision(obb, segment);
 
+		// ImGui controls for camera, OBB, and segment parameters
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
 		ImGui::DragFloat3("OBB Center", &obb.center.x, 0.01f);
 		ImGui::DragFloat3("OBB Size", &obb.size.x, 0.01f);
 		ImGui::DragFloat3("OBB Rotate", &obbRotate.x, 0.01f);
-		ImGui::DragFloat3("Sphere Center", &sphere.center.x, 0.01f);
-		ImGui::DragFloat("Sphere Radius", &sphere.radius, 0.01f);
+		ImGui::DragFloat3("Segment Origin", &segment.origin.x, 0.01f);
+		ImGui::DragFloat3("Segment Diff", &segment.diff.x, 0.01f);
 		ImGui::End();
 
+		// Build view matrix from camera rotation and translation
 		Matrix4x4 cameraRotateX = MakeRotateXMatrix(cameraRotate.x);
 		Matrix4x4 cameraRotateY = MakeRotateYMatrix(cameraRotate.y);
 		Matrix4x4 cameraRotateMatrix = Multiply(cameraRotateY, cameraRotateX);
@@ -310,6 +354,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		Matrix4x4 cameraMatrix = Multiply(cameraTranslateMatrix, cameraRotateMatrix);
 		Matrix4x4 viewMatrix = MakeInverseMatrix(cameraMatrix);
 
+		// Build perspective projection matrix
 		Matrix4x4 projectionMatrix = {};
 		float fovY = 0.45f;
 		float aspect = 1280.0f / 720.0f;
@@ -321,6 +366,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		projectionMatrix.m[2][3] = 1.0f;
 		projectionMatrix.m[3][2] = -nearZ * farZ / (farZ - nearZ);
 
+		// Combine view and projection, then build the viewport transform
 		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 		Matrix4x4 viewportMatrix = makeViewportMatrix(0.0f, 0.0f, 1280.0f, 720.0f, 0.0f, 1.0f);
 
@@ -332,9 +378,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓描画処理ここから
 		///
 
+		// Draw scene; turn RED on collision, WHITE otherwise
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 		DrawOBB(obb, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
-		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
+		DrawSegment(segment, viewProjectionMatrix, viewportMatrix);
 
 		///
 		/// ↑描画処理ここまで
