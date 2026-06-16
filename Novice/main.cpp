@@ -13,20 +13,10 @@ typedef struct Vector3 {
 	float z;
 } Vector3;
 
-struct AABB {
-	Vector3 center;
-	Vector3 size;
-};
-
 struct OBB {
 	Vector3 center;
 	Vector3 orientation[3];
 	Vector3 size;
-};
-
-struct Segment {
-	Vector3 origin;
-	Vector3 diff;
 };
 
 typedef struct Matrix4x4 {
@@ -164,62 +154,65 @@ Vector3 Transform(const Vector3& vertex, const Matrix4x4& matrix) {
 	return result;
 }
 
-// OBB vs Segment:
-// Builds the OBB world matrix from its orientation axes and center,
-// inverts it to get the OBB local space transform,
-// transforms both segment endpoints into local space,
-// then runs a slab test against the local AABB [-size, +size].
-// Returns true if the overlapping t range intersects [0, 1] (the segment extent).
-bool IsCollision(const OBB& obb, const Segment& segment) {
-	// Build OBB world matrix from orientation axes and center
-	Matrix4x4 obbWorld = {};
-	obbWorld.m[0][0] = obb.orientation[0].x;
-	obbWorld.m[0][1] = obb.orientation[0].y;
-	obbWorld.m[0][2] = obb.orientation[0].z;
-	obbWorld.m[1][0] = obb.orientation[1].x;
-	obbWorld.m[1][1] = obb.orientation[1].y;
-	obbWorld.m[1][2] = obb.orientation[1].z;
-	obbWorld.m[2][0] = obb.orientation[2].x;
-	obbWorld.m[2][1] = obb.orientation[2].y;
-	obbWorld.m[2][2] = obb.orientation[2].z;
-	obbWorld.m[3][0] = obb.center.x;
-	obbWorld.m[3][1] = obb.center.y;
-	obbWorld.m[3][2] = obb.center.z;
-	obbWorld.m[3][3] = 1.0f;
+// OBB vs OBB - Hyperplane Separation Theorem (SAT):
+// Projects both OBBs onto 15 candidate separating axes:
+//   - 3 face normals of OBB A
+//   - 3 face normals of OBB B
+//   - 9 cross products of each pair of edges (one from A, one from B)
+// For each axis, computes the projection radius of each OBB and the distance
+// between centers along that axis. If any axis shows separation, the OBBs do
+// not collide. If no separating axis is found, the OBBs are colliding.
+bool IsCollision(const OBB& obbA, const OBB& obbB) {
+	// Compute the vector between the two OBB centers
+	Vector3 distance = Subtract(obbB.center, obbA.center);
 
-	// Invert to get transform from world space into OBB local space
-	Matrix4x4 obbInverse = MakeInverseMatrix(obbWorld);
+	// Gather all 15 candidate separating axes
+	Vector3 axes[15];
 
-	// Transform segment endpoints into OBB local space
-	Vector3 localOrigin = Transform(segment.origin, obbInverse);
-	Vector3 localEnd = Transform(Add(segment.origin, segment.diff), obbInverse);
-	Vector3 localDiff = Subtract(localEnd, localOrigin);
+	// 3 face normals of OBB A
+	axes[0] = obbA.orientation[0];
+	axes[1] = obbA.orientation[1];
+	axes[2] = obbA.orientation[2];
 
-	// Slab test: find t range where the segment overlaps each axis-aligned slab
-	float tMin = -1e10f, tMax = 1e10f;
-	float dirs[3] = {localDiff.x, localDiff.y, localDiff.z};
-	float origs[3] = {localOrigin.x, localOrigin.y, localOrigin.z};
-	float sizes[3] = {obb.size.x, obb.size.y, obb.size.z};
+	// 3 face normals of OBB B
+	axes[3] = obbB.orientation[0];
+	axes[4] = obbB.orientation[1];
+	axes[5] = obbB.orientation[2];
 
+	// 9 edge cross products (one edge axis from A crossed with one from B)
+	int idx = 6;
 	for (int i = 0; i < 3; i++) {
-		if (std::abs(dirs[i]) < 1e-8f) {
-			// Segment is parallel to this slab; origin must lie within it
-			if (origs[i] < -sizes[i] || origs[i] > sizes[i])
-				return false;
-		} else {
-			// Compute intersection t values with the two slab planes
-			float t1 = (-sizes[i] - origs[i]) / dirs[i];
-			float t2 = (sizes[i] - origs[i]) / dirs[i];
-			if (t1 > t2)
-				std::swap(t1, t2);
-			tMin = std::max(tMin, t1);
-			tMax = std::min(tMax, t2);
-			if (tMin > tMax)
-				return false;
+		for (int j = 0; j < 3; j++) {
+			axes[idx++] = Cross(obbA.orientation[i], obbB.orientation[j]);
 		}
 	}
-	// Segment spans t in [0, 1]; check if the slab overlap intersects that range
-	return tMax >= 0.0f && tMin <= 1.0f;
+
+	// Test each axis for separation
+	for (int i = 0; i < 15; i++) {
+		// Skip near-zero axes that arise from parallel edges
+		if (Length(axes[i]) < 1e-6f)
+			continue;
+
+		Vector3 axis = Normalize(axes[i]);
+
+		// Project OBB A's half-extents onto the axis
+		float rA =
+		    std::abs(Dot(Scale(obbA.orientation[0], obbA.size.x), axis)) + std::abs(Dot(Scale(obbA.orientation[1], obbA.size.y), axis)) + std::abs(Dot(Scale(obbA.orientation[2], obbA.size.z), axis));
+
+		// Project OBB B's half-extents onto the axis
+		float rB =
+		    std::abs(Dot(Scale(obbB.orientation[0], obbB.size.x), axis)) + std::abs(Dot(Scale(obbB.orientation[1], obbB.size.y), axis)) + std::abs(Dot(Scale(obbB.orientation[2], obbB.size.z), axis));
+
+		// Project the center-to-center vector onto the axis
+		float d = std::abs(Dot(distance, axis));
+
+		// If the projected distance exceeds the sum of radii, a separating axis exists
+		if (d > rA + rB)
+			return false;
+	}
+
+	// No separating axis found — OBBs are colliding
+	return true;
 }
 
 // Draws a world-space grid on the XZ plane using subdivided lines;
@@ -289,13 +282,6 @@ void DrawOBB(const OBB& obb, const Matrix4x4& viewProjectionMatrix, const Matrix
 	}
 }
 
-// Draws a segment as a single line from origin to origin+diff in screen space
-void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
-	Vector3 screenStart = Transform(Transform(segment.origin, viewProjectionMatrix), viewportMatrix);
-	Vector3 screenEnd = Transform(Transform(Add(segment.origin, segment.diff), viewProjectionMatrix), viewportMatrix);
-	Novice::DrawLine(int(screenStart.x), int(screenStart.y), int(screenEnd.x), int(screenEnd.y),WHITE);
-}
-
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Novice::Initialize(kWindowTitle, 1280, 720);
 
@@ -305,17 +291,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Vector3 cameraTranslate = {0.0f, 0.0f, -9.5f};
 	Vector3 cameraRotate = {0.52f, 0.0f, 0.0f};
 
-	OBB obb = {
-	    .center = {-1.0f,              0.0f,               0.0f              },
+	OBB obbA = {
+	    .center = {0.0f,0.0f,0.0f},
 	    .orientation = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-	    .size = {0.5f,               0.5f,               0.5f              },
+	    .size = {0.83f,0.26f,0.24f},
 	};
-	Vector3 obbRotate = {0.0f, 0.0f, 0.0f};
+	Vector3 obbRotateA = {0.0f, 0.0f, 0.0f};
 
-	Segment segment = {
-	    .origin = {-0.8f, -0.3f, 0.0f},
-	    .diff = {0.5f,  0.5f,  0.5f},
+	OBB obbB = {
+	    .center = {0.9f,0.66f,0.78f},
+	    .orientation = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+	    .size = {0.5f,0.37f,0.5f},
 	};
+	Vector3 obbRotateB = {-0.05f, -2.49f, 0.15f};
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -326,24 +314,33 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓更新処理ここから
 		///
 
-		// Update OBB orientation axes from the current rotation angles
-		Matrix4x4 rotXYZ = MakeRotateXYZMatrix(obbRotate.x, obbRotate.y, obbRotate.z);
-		obb.orientation[0] = {rotXYZ.m[0][0], rotXYZ.m[0][1], rotXYZ.m[0][2]};
-		obb.orientation[1] = {rotXYZ.m[1][0], rotXYZ.m[1][1], rotXYZ.m[1][2]};
-		obb.orientation[2] = {rotXYZ.m[2][0], rotXYZ.m[2][1], rotXYZ.m[2][2]};
+		// Update OBB A orientation axes from its current rotation angles
+		Matrix4x4 rotXYZ_A = MakeRotateXYZMatrix(obbRotateA.x, obbRotateA.y, obbRotateA.z);
+		obbA.orientation[0] = {rotXYZ_A.m[0][0], rotXYZ_A.m[0][1], rotXYZ_A.m[0][2]};
+		obbA.orientation[1] = {rotXYZ_A.m[1][0], rotXYZ_A.m[1][1], rotXYZ_A.m[1][2]};
+		obbA.orientation[2] = {rotXYZ_A.m[2][0], rotXYZ_A.m[2][1], rotXYZ_A.m[2][2]};
 
-		// Test whether the segment intersects the OBB
-		bool collision = IsCollision(obb, segment);
+		// Update OBB B orientation axes from its current rotation angles
+		Matrix4x4 rotXYZ_B = MakeRotateXYZMatrix(obbRotateB.x, obbRotateB.y, obbRotateB.z);
+		obbB.orientation[0] = {rotXYZ_B.m[0][0], rotXYZ_B.m[0][1], rotXYZ_B.m[0][2]};
+		obbB.orientation[1] = {rotXYZ_B.m[1][0], rotXYZ_B.m[1][1], rotXYZ_B.m[1][2]};
+		obbB.orientation[2] = {rotXYZ_B.m[2][0], rotXYZ_B.m[2][1], rotXYZ_B.m[2][2]};
 
-		// ImGui controls for camera, OBB, and segment parameters
+		// Test whether the two OBBs intersect using the Hyperplane Separation Theorem
+		bool collision = IsCollision(obbA, obbB);
+
+		// ImGui controls for camera, OBB A, and OBB B parameters
 		ImGui::Begin("Window");
 		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
 		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("OBB Center", &obb.center.x, 0.01f);
-		ImGui::DragFloat3("OBB Size", &obb.size.x, 0.01f);
-		ImGui::DragFloat3("OBB Rotate", &obbRotate.x, 0.01f);
-		ImGui::DragFloat3("Segment Origin", &segment.origin.x, 0.01f);
-		ImGui::DragFloat3("Segment Diff", &segment.diff.x, 0.01f);
+		ImGui::Separator();
+		ImGui::DragFloat3("OBB A Center", &obbA.center.x, 0.01f);
+		ImGui::DragFloat3("OBB A Size", &obbA.size.x, 0.01f);
+		ImGui::DragFloat3("OBB A Rotate", &obbRotateA.x, 0.01f);
+		ImGui::Separator();
+		ImGui::DragFloat3("OBB B Center", &obbB.center.x, 0.01f);
+		ImGui::DragFloat3("OBB B Size", &obbB.size.x, 0.01f);
+		ImGui::DragFloat3("OBB B Rotate", &obbRotateB.x, 0.01f);
 		ImGui::End();
 
 		// Build view matrix from camera rotation and translation
@@ -380,8 +377,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		// Draw scene; turn RED on collision, WHITE otherwise
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
-		DrawOBB(obb, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
-		DrawSegment(segment, viewProjectionMatrix, viewportMatrix);
+		DrawOBB(obbA, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
+		DrawOBB(obbB, viewProjectionMatrix, viewportMatrix, collision ? RED : WHITE);
 
 		///
 		/// ↑描画処理ここまで
