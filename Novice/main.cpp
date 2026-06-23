@@ -165,9 +165,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// Three control points for the quadratic Bezier curve
 	Vector3 controlPoints[3] = {
-	    {-1.5f, 0.0f, 1.0f }, // p0: start
-	    {0.0f,  1.5f, 0.0f }, // p1: control (pulls the curve)
-	    {1.5f,  0.0f, -1.0f}, // p2: end
+	    {-0.8f, 0.58f, 1.0f }, // p0: start
+	    {1.76f,  1.0f, -0.3f }, // p1: control (pulls the curve)
+	    {0.94f,  -0.7f, 2.3f}, // p2: end
 	};
 
 	while (Novice::ProcessMessage() == 0) {
