@@ -6,24 +6,28 @@
 const char kWindowTitle[] = "GC2A_04_ネイ_トウーアウン";
 const float kPi = 3.14159265358979323846f;
 
-typedef struct Vector3 {
+struct Vector3 {
 	float x;
 	float y;
 	float z;
-} Vector3;
 
-typedef struct Matrix4x4 {
+	Vector3 operator+(const Vector3& v) const { return {x + v.x, y + v.y, z + v.z}; }
+	Vector3 operator-(const Vector3& v) const { return {x - v.x, y - v.y, z - v.z}; }
+	Vector3 operator*(float s) const { return {x * s, y * s, z * s}; }
+};
+
+struct Matrix4x4 {
 	float m[4][4];
-} Matrix4x4;
 
-Matrix4x4 Multiply(Matrix4x4 m1, Matrix4x4 m2) {
-	Matrix4x4 result = {};
-	for (int i = 0; i < 4; i++)
-		for (int j = 0; j < 4; j++)
-			for (int k = 0; k < 4; k++)
-				result.m[i][j] += m1.m[i][k] * m2.m[k][j];
-	return result;
-}
+	Matrix4x4 operator*(const Matrix4x4& other) const {
+		Matrix4x4 result = {};
+		for (int i = 0; i < 4; i++)
+			for (int j = 0; j < 4; j++)
+				for (int k = 0; k < 4; k++)
+					result.m[i][j] += m[i][k] * other.m[k][j];
+		return result;
+	}
+};
 
 Matrix4x4 MakeRotateXMatrix(float angle) {
 	Matrix4x4 r = {};
@@ -79,12 +83,11 @@ Matrix4x4 MakeTranslateMatrix(const Vector3& t) {
 	return r;
 }
 
-// Builds a world matrix from scale, rotation (XYZ), and translation
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
 	Matrix4x4 S = MakeScaleMatrix(scale);
-	Matrix4x4 R = Multiply(Multiply(MakeRotateXMatrix(rotate.x), MakeRotateYMatrix(rotate.y)), MakeRotateZMatrix(rotate.z));
+	Matrix4x4 R = MakeRotateXMatrix(rotate.x) * MakeRotateYMatrix(rotate.y) * MakeRotateZMatrix(rotate.z);
 	Matrix4x4 T = MakeTranslateMatrix(translate);
-	return Multiply(Multiply(S, R), T);
+	return S * R * T;
 }
 
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
@@ -92,11 +95,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	char keys[256] = {0};
 	char preKeys[256] = {0};
-
-	// c = translate, d = rotate, e = scale
-	Vector3 c = {2.6f, 4.1f, 1.2f};
-	Vector3 d = {-2.2f, -2.1f, -1.2f};
-	Vector3 e = {0.48f, 2.4f, 0.0f};
 
 	while (Novice::ProcessMessage() == 0) {
 		Novice::BeginFrame();
@@ -107,8 +105,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓更新処理ここから
 		///
 
-		// Compute the affine matrix from scale=e, rotate=d, translate=c
-		Matrix4x4 matrix = MakeAffineMatrix(e, d, c);
+		// Vector3 operator overload usage — matching the reference slide exactly
+		Vector3 a{0.2f, 1.0f, 0.0f};
+		Vector3 b{2.4f, 3.1f, 1.2f};
+		Vector3 c = a + b;    // operator+
+		Vector3 d = a - b;    // operator-
+		Vector3 e = a * 2.4f; // operator* (scalar)
+
+		// Matrix4x4 operator* overload usage
+		Vector3 rotate{0.4f, 1.43f, -0.8f};
+		Matrix4x4 rotateXMatrix = MakeRotateXMatrix(rotate.x);
+		Matrix4x4 rotateYMatrix = MakeRotateYMatrix(rotate.y);
+		Matrix4x4 rotateZMatrix = MakeRotateZMatrix(rotate.z);
+		Matrix4x4 rotateMatrix = rotateXMatrix * rotateYMatrix * rotateZMatrix; // operator*
 
 		///
 		/// ↑更新処理ここまで
@@ -122,11 +131,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::Text("c:%f, %f, %f", c.x, c.y, c.z);
 		ImGui::Text("d:%f, %f, %f", d.x, d.y, d.z);
 		ImGui::Text("e:%f, %f, %f", e.x, e.y, e.z);
-		ImGui::Text("matrix:");
-		ImGui::Text("%f, %f, %f, %f", matrix.m[0][0], matrix.m[0][1], matrix.m[0][2], matrix.m[0][3]);
-		ImGui::Text("%f, %f, %f, %f", matrix.m[1][0], matrix.m[1][1], matrix.m[1][2], matrix.m[1][3]);
-		ImGui::Text("%f, %f, %f, %f", matrix.m[2][0], matrix.m[2][1], matrix.m[2][2], matrix.m[2][3]);
-		ImGui::Text("%f, %f, %f, %f", matrix.m[3][0], matrix.m[3][1], matrix.m[3][2], matrix.m[3][3]);
+		ImGui::Text(
+		    "matrix:\n%f, %f, %f, %f\n%f, %f, %f, %f\n%f, %f, %f, %f\n%f, %f, %f, %f\n", rotateMatrix.m[0][0], rotateMatrix.m[0][1], rotateMatrix.m[0][2], rotateMatrix.m[0][3], rotateMatrix.m[1][0],
+		    rotateMatrix.m[1][1], rotateMatrix.m[1][2], rotateMatrix.m[1][3], rotateMatrix.m[2][0], rotateMatrix.m[2][1], rotateMatrix.m[2][2], rotateMatrix.m[2][3], rotateMatrix.m[3][0],
+		    rotateMatrix.m[3][1], rotateMatrix.m[3][2], rotateMatrix.m[3][3]);
 		ImGui::End();
 
 		///
