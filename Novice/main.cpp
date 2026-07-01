@@ -215,12 +215,6 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 	}
 }
 
-struct Spring {
-	Vector3 anchor;      // アンカー。固定された端の位置
-	float naturalLength; // 自然長
-	float stiffness;     // 剛性。バネ定数k
-};
-
 struct Ball {
 	Vector3 position;     // ボールの位置
 	Vector3 velocity;     // ボールの速度
@@ -266,16 +260,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	const float kDeltaTime = 1.0f / 60.0f;
 
-	Spring spring{};
-	spring.anchor = {0.0f, 0.0f, 0.0f};
-	spring.naturalLength = 1.0f;
-	spring.stiffness = 100.0f;
+	Vector3 orbitCenter{0.0f, 0.0f, 0.0f};
 
 	Ball ball{};
 	ball.position = {1.2f, 0.0f, 0.0f};
 	ball.mass = 2.0f;
 	ball.radius = 0.05f;
 	ball.color = BLUE;
+
+	const float kOrbitRadius = 1.2f;       // distance from the anchor
+	const float kOrbitAngularSpeed = 2.0f; // radians per second
+	float orbitAngle = 0.0f;
 
 	bool isStarted = false;
 
@@ -295,18 +290,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
 		if (isStarted) {
-			Vector3 diff = ball.position - spring.anchor;
-			float length = Length(diff);
-			if (length != 0.0f) {
-				Vector3 direction = Normalize(diff);
-				float extension = length - spring.naturalLength;
-				Vector3 restoringForce = direction * (-spring.stiffness * extension);
-				ball.acceleration = restoringForce / ball.mass;
-			} else {
-				ball.acceleration = {0.0f, 0.0f, 0.0f};
-			}
-			ball.velocity = ball.velocity + ball.acceleration * kDeltaTime;
-			ball.position = ball.position + ball.velocity * kDeltaTime;
+			orbitAngle += kOrbitAngularSpeed * kDeltaTime;
+			ball.position.x = orbitCenter.x + kOrbitRadius * std::cos(orbitAngle);
+			ball.position.y = orbitCenter.y + kOrbitRadius * std::sin(orbitAngle);
+			ball.position.z = orbitCenter.z;
 		}
 
 		///
@@ -319,16 +306,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
-		Vector3 anchorScreen = Transform(Transform(spring.anchor, viewProjectionMatrix), viewportMatrix);
-		Vector3 ballScreen = Transform(Transform(ball.position, viewProjectionMatrix), viewportMatrix);
-		Novice::DrawLine(int(anchorScreen.x), int(anchorScreen.y), int(ballScreen.x), int(ballScreen.y), WHITE);
 		DrawSphere(ball.position, ball.radius, viewProjectionMatrix, viewportMatrix, ball.color);
 
 		ImGui::Begin("Window");
 		if (ImGui::Button("Start")) {
-			ball.position = {1.2f, 0.0f, 0.0f};
-			ball.velocity = {0.0f, 0.0f, 0.0f};
-			ball.acceleration = {0.0f, 0.0f, 0.0f};
+			orbitAngle = 0.0f;
+			ball.position = {orbitCenter.x + kOrbitRadius, orbitCenter.y, orbitCenter.z};
 			isStarted = true;
 		}
 		ImGui::End();
