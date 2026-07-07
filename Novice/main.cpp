@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <imgui.h>
 
-const char kWindowTitle[] = "MT3_04_00_Basic";
+const char kWindowTitle[] = "GC2A_04_ネイ_トウーアウン";
 const float kPi = 3.14159265358979323846f;
 const int kWindowWidth = 1280;
 const int kWindowHeight = 720;
