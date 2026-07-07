@@ -224,6 +224,15 @@ struct Ball {
 	unsigned int color;   // ボールの色
 };
 
+// 振り子
+struct Pendulum {
+	Vector3 anchor;            // アンカーポイント。固定された端の位置
+	float length;              // 紐の長さ
+	float angle;               // 現在の角度
+	float angularVelocity;     // 角速度ω
+	float angularAcceleration; // 角加速度
+};
+
 void DrawSphere(const Vector3& center, float radius, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, unsigned int color) {
 	const uint32_t kSubdivision = 16;
 	const float kLatEvery = kPi / float(kSubdivision);
@@ -248,6 +257,12 @@ void DrawSphere(const Vector3& center, float radius, const Matrix4x4& viewProjec
 	}
 }
 
+void DrawPendulum(const Pendulum& pendulum, const Vector3& tip, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
+	Vector3 screenAnchor = Transform(Transform(pendulum.anchor, viewProjectionMatrix), viewportMatrix);
+	Vector3 screenTip = Transform(Transform(tip, viewProjectionMatrix), viewportMatrix);
+	Novice::DrawLine(int(screenAnchor.x), int(screenAnchor.y), int(screenTip.x), int(screenTip.y), WHITE);
+}
+
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
 
@@ -260,17 +275,23 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	const float kDeltaTime = 1.0f / 60.0f;
 
-	Vector3 orbitCenter{0.0f, 0.0f, 0.0f};
-
 	Ball ball{};
-	ball.position = {1.2f, 0.0f, 0.0f};
 	ball.mass = 2.0f;
 	ball.radius = 0.05f;
 	ball.color = BLUE;
 
-	const float kOrbitRadius = 1.2f;       // distance from the anchor
-	const float kOrbitAngularSpeed = 2.0f; // radians per second
-	float orbitAngle = 0.0f;
+	// 振り子の初期値（スライド通り）
+	Pendulum pendulum{};
+	pendulum.anchor = {0.0f, 1.0f, 0.0f};
+	pendulum.length = 0.8f;
+	pendulum.angle = 0.7f;
+	pendulum.angularVelocity = 0.0f;
+	pendulum.angularAcceleration = 0.0f;
+
+	// 初期位置を振り子の先端に合わせておく
+	ball.position.x = pendulum.anchor.x + std::sin(pendulum.angle) * pendulum.length;
+	ball.position.y = pendulum.anchor.y - std::cos(pendulum.angle) * pendulum.length;
+	ball.position.z = pendulum.anchor.z;
 
 	bool isStarted = false;
 
@@ -290,10 +311,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0.0f, 0.0f, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
 
 		if (isStarted) {
-			orbitAngle += kOrbitAngularSpeed * kDeltaTime;
-			ball.position.x = orbitCenter.x + kOrbitRadius * std::cos(orbitAngle);
-			ball.position.y = orbitCenter.y + kOrbitRadius * std::sin(orbitAngle);
-			ball.position.z = orbitCenter.z;
+			// 振り子の角度を計算する
+			pendulum.angularAcceleration = -(9.8f / pendulum.length) * std::sin(pendulum.angle);
+			pendulum.angularVelocity += pendulum.angularAcceleration * kDeltaTime;
+			pendulum.angle += pendulum.angularVelocity * kDeltaTime;
+
+			// pは振り子の先端の位置
+			ball.position.x = pendulum.anchor.x + std::sin(pendulum.angle) * pendulum.length;
+			ball.position.y = pendulum.anchor.y - std::cos(pendulum.angle) * pendulum.length;
+			ball.position.z = pendulum.anchor.z;
 		}
 
 		///
@@ -306,12 +332,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
 
+		DrawPendulum(pendulum, ball.position, viewProjectionMatrix, viewportMatrix);
 		DrawSphere(ball.position, ball.radius, viewProjectionMatrix, viewportMatrix, ball.color);
 
 		ImGui::Begin("Window");
 		if (ImGui::Button("Start")) {
-			orbitAngle = 0.0f;
-			ball.position = {orbitCenter.x + kOrbitRadius, orbitCenter.y, orbitCenter.z};
+			pendulum.angle = 0.7f;
+			pendulum.angularVelocity = 0.0f;
+			pendulum.angularAcceleration = 0.0f;
+			ball.position.x = pendulum.anchor.x + std::sin(pendulum.angle) * pendulum.length;
+			ball.position.y = pendulum.anchor.y - std::cos(pendulum.angle) * pendulum.length;
+			ball.position.z = pendulum.anchor.z;
 			isStarted = true;
 		}
 		ImGui::End();
