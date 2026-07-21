@@ -216,9 +216,10 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMa
 }
 
 struct Spring {
-	Vector3 anchor;      // アンカー。固定された端の位置
-	float naturalLength; // 自然長
-	float stiffness;     // 剛性。バネ定数k
+	Vector3 anchor;           // アンカー。固定された端の位置
+	float naturalLength;      // 自然長
+	float stiffness;          // 剛性。バネ定数k
+	float dampingCoefficient; // 減衰係数
 };
 
 struct Ball {
@@ -270,6 +271,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	spring.anchor = {0.0f, 0.0f, 0.0f};
 	spring.naturalLength = 1.0f;
 	spring.stiffness = 100.0f;
+	spring.dampingCoefficient = 2.0f;
 
 	Ball ball{};
 	ball.position = {1.2f, 0.0f, 0.0f};
@@ -297,14 +299,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		if (isStarted) {
 			Vector3 diff = ball.position - spring.anchor;
 			float length = Length(diff);
+
+			Vector3 restoringForce{0.0f, 0.0f, 0.0f};
 			if (length != 0.0f) {
 				Vector3 direction = Normalize(diff);
 				float extension = length - spring.naturalLength;
-				Vector3 restoringForce = direction * (-spring.stiffness * extension);
-				ball.acceleration = restoringForce / ball.mass;
-			} else {
-				ball.acceleration = {0.0f, 0.0f, 0.0f};
+				restoringForce = direction * (-spring.stiffness * extension);
 			}
+
+			// 減衰力：速度に比例し、速度と逆向きにはたらく（粘性減衰）
+			Vector3 dampingForce = ball.velocity * (-spring.dampingCoefficient);
+
+			// 復元力と減衰力を合算し、質量で割って加速度を求める
+			Vector3 force = restoringForce + dampingForce;
+			ball.acceleration = force / ball.mass;
+
 			ball.velocity = ball.velocity + ball.acceleration * kDeltaTime;
 			ball.position = ball.position + ball.velocity * kDeltaTime;
 		}
@@ -331,6 +340,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ball.acceleration = {0.0f, 0.0f, 0.0f};
 			isStarted = true;
 		}
+		ImGui::SliderFloat("Stiffness (k)", &spring.stiffness, 1.0f, 300.0f);
+		ImGui::SliderFloat("Damping Coefficient", &spring.dampingCoefficient, 0.0f, 20.0f);
 		ImGui::End();
 
 		///
